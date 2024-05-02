@@ -3,6 +3,7 @@ package repository
 import (
 	"database/sql"
 	"fmt"
+	"sync"
 
 	"github.com/sraynitjsr/model"
 )
@@ -22,15 +23,42 @@ func (repo *UserRepository) GetAll() ([]model.User, error) {
 	}
 	defer rows.Close()
 
-	var users []model.User
+	// Channel to collect users from goroutines
+	userChan := make(chan model.User)
+	defer close(userChan)
+
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	users := make([]model.User, 0)
+
+	// Launch goroutine for each row
 	for rows.Next() {
 		var user model.User
 		err := rows.Scan(&user.ID, &user.Name, &user.Age)
 		if err != nil {
 			return nil, err
 		}
-		users = append(users, user)
+
+		wg.Add(1)
+		go func(u model.User) {
+			defer wg.Done()
+			userChan <- u
+		}(user)
 	}
+
+	// Close channel after all goroutines finish
+	go func() {
+		wg.Wait()
+		close(userChan)
+	}()
+
+	// Collect users from goroutines
+	for user := range userChan {
+		mu.Lock()
+		users = append(users, user)
+		mu.Unlock()
+	}
+
 	return users, nil
 }
 
