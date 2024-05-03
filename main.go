@@ -1,6 +1,8 @@
 package main
 
 import (
+	"io/ioutil"
+	"log"
 	"net/http"
 
 	"github.com/gorilla/mux"
@@ -8,10 +10,26 @@ import (
 	"github.com/sraynitjsr/controller"
 	"github.com/sraynitjsr/repository"
 	"github.com/sraynitjsr/service"
+	"gopkg.in/yaml.v2"
 )
 
+type Config struct {
+	Database struct {
+		Username string `yaml:"username"`
+		Password string `yaml:"password"`
+		Host     string `yaml:"host"`
+		Port     string `yaml:"port"`
+		Name     string `yaml:"name"`
+	} `yaml:"database"`
+}
+
 func main() {
-	db, err := repository.ConnectToDB("username:password@tcp(127.0.0.1:3306)/database_name")
+	config, err := loadConfig("config/config.yaml")
+	if err != nil {
+		log.Fatalf("error loading config: %v", err)
+	}
+
+	db, err := repository.ConnectToDB(config.Database.Username + ":" + config.Database.Password + "@tcp(" + config.Database.Host + ":" + config.Database.Port + ")/" + config.Database.Name)
 	if err != nil {
 		panic(err)
 	}
@@ -41,4 +59,17 @@ func limitMiddleware(next http.HandlerFunc, limiter *ratelimit.Bucket) http.Hand
 		}
 		next(w, r)
 	}
+}
+
+func loadConfig(filename string) (*Config, error) {
+	data, err := ioutil.ReadFile(filename)
+	if err != nil {
+		return nil, err
+	}
+	var config Config
+	err = yaml.Unmarshal(data, &config)
+	if err != nil {
+		return nil, err
+	}
+	return &config, nil
 }
